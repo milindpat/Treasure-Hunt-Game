@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Treasure Hunt</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+
+  :root {
+    --gold: #c9933a;
+    --gold-light: #f0c96b;
+    --parchment: #f2e8d0;
+    --parchment-dark: #d4c4a0;
+    --ink: #2a1f0e;
+    --ink-light: #4a3828;
+    --fog: #8a7a5a;
+    --danger: #8b2020;
+    --success: #2a6b2a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a1208;
+    font-family: 'Crimson Text', serif;
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow-x: hidden;
+  }
+
+  /* Animated star/noise background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(ellipse at 20% 50%, #2a1a0a 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 20%, #0a1a2a 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #game-container {
+    position: relative;
+    z-index: 1;
+    width: min(700px, 95vw);
+  }
+
+  h1 {
+    font-family: 'Cinzel Decorative', cursive;
+    color: var(--gold-light);
+    font-size: clamp(1.4rem, 4vw, 2.2rem);
+    text-align: center;
+    text-shadow: 0 0 20px rgba(201,147,58,0.6), 0 2px 0 #6b4a10;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: var(--fog);
+    font-style: italic;
+    font-size: 1.1rem;
+    margin-bottom: 24px;
+  }
+
+  /* MAP GRID */
+  #map-wrapper {
+    background: var(--parchment);
+    border: 3px solid var(--gold);
+    border-radius: 4px;
+    padding: 16px;
+    box-shadow: 0 0 0 6px #2a1f0e, 0 0 40px rgba(201,147,58,0.3), inset 0 0 60px rgba(100,70,20,0.3);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Parchment texture overlay */
+  #map-wrapper::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(0deg, transparent, transparent 28px, rgba(150,110,50,0.08) 28px, rgba(150,110,50,0.08) 29px),
+      repeating-linear-gradient(90deg, transparent, transparent 28px, rgba(150,110,50,0.05) 28px, rgba(150,110,50,0.05) 29px);
+    pointer-events: none;
+  }
+
+  /* Corner decorations */
+  .corner { position: absolute; font-size: 1.8rem; color: var(--gold); opacity: 0.6; line-height:1; }
+  .corner.tl { top: 6px; left: 10px; }
+  .corner.tr { top: 6px; right: 10px; }
+  .corner.bl { bottom: 6px; left: 10px; }
+  .corner.br { bottom: 6px; right: 10px; }
+
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cell {
+    aspect-ratio: 1;
+    border: 1px solid rgba(100,70,20,0.25);
+    border-radius: 3px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(1rem, 2.5vw, 1.6rem);
+    transition: transform 0.15s, background 0.2s, box-shadow 0.2s;
+    background: rgba(242,232,208,0.4);
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cell:hover:not(.revealed) {
+    background: rgba(201,147,58,0.2);
+    transform: scale(1.06);
+    box-shadow: 0 0 8px rgba(201,147,58,0.4);
+    z-index: 2;
+  }
+
+  .cell.revealed {
+    cursor: default;
+    background: rgba(180,155,100,0.35);
+    animation: reveal 0.3s ease;
+  }
+
+  @keyframes reveal {
+    0% { transform: scale(0.7) rotateY(90deg); opacity: 0; }
+    100% { transform: scale(1) rotateY(0deg); opacity: 1; }
+  }
+
+  .cell.boom {
+    background: rgba(139,32,32,0.4);
+    animation: boom 0.4s ease;
+  }
+  @keyframes boom {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.3); background: rgba(255,80,20,0.7); }
+    100% { transform: scale(1); }
+  }
+
+  .cell.treasure {
+    background: rgba(100,180,50,0.3);
+    animation: treasure 0.5s ease;
+  }
+  @keyframes treasure {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.4) rotate(10deg); }
+    70% { transform: scale(0.9) rotate(-5deg); }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+
+  /* HUD */
+  #hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 14px;
+    padding: 10px 16px;
+    background: rgba(42,31,14,0.85);
+    border: 2px solid var(--gold);
+    border-radius: 4px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .hud-stat {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  .hud-label {
+    font-size: 0.7rem;
+    color: var(--fog);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-family: 'Crimson Text', serif;
+  }
+  .hud-value {
+    font-family: 'Cinzel Decorative', cursive;
+    font-size: 1.1rem;
+    color: var(--gold-light);
+  }
+
+  #lives-display { font-size: 1.3rem; }
+
+  /* Clue box */
+  #clue-box {
+    margin-top: 10px;
+    background: rgba(42,31,14,0.7);
+    border: 1px solid var(--gold);
+    border-radius: 4px;
+    padding: 12px 16px;
+    color: var(--parchment);
+    font-style: italic;
+    font-size: 1.1rem;
+    line-height: 1.5;
+    min-height: 48px;
+    text-align: center;
+    transition: color 0.3s;
+  }
+
+  #clue-box .clue-label {
+    display: block;
+    font-style: normal;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--gold);
+    margin-bottom: 4px;
+  }
+
+  /* Overlay */
+  #overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10,7,2,0.85);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  #overlay.active { display: flex; }
+
+  .overlay-card {
+    background: var(--parchment);
+    border: 4px solid var(--gold);
+    border-radius: 8px;
+    padding: 36px 44px;
+    text-align: center;
+    max-width: 400px;
+    width: 90vw;
+    box-shadow: 0 0 0 8px #2a1f0e, 0 0 60px rgba(201,147,58,0.5);
+    animation: cardIn 0.4s cubic-bezier(.17,.67,.35,1.3);
+  }
+
+  @keyframes cardIn {
+    from { transform: scale(0.7) translateY(30px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+  }
+
+  .overlay-card h2 {
+    font-family: 'Cinzel Decorative', cursive;
+    color: var(--gold);
+    font-size: 1.7rem;
+    margin-bottom: 10px;
+    text-shadow: 0 1px 0 #6b4a10;
+  }
+
+  .overlay-card p {
+    color: var(--ink-light);
+    font-size: 1.15rem;
+    line-height: 1.5;
+    margin-bottom: 20px;
+  }
+
+  .big-emoji { font-size: 3.5rem; display: block; margin-bottom: 8px; }
+
+  button {
+    font-family: 'Cinzel Decorative', cursive;
+    background: linear-gradient(135deg, #c9933a, #f0c96b, #c9933a);
+    color: var(--ink);
+    border: none;
+    padding: 12px 32px;
+    font-size: 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    box-shadow: 0 3px 0 #6b4a10, 0 4px 12px rgba(0,0,0,0.4);
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+
+  button:hover { transform: translateY(-2px); box-shadow: 0 5px 0 #6b4a10, 0 6px 16px rgba(0,0,0,0.4); }
+  button:active { transform: translateY(1px); box-shadow: 0 2px 0 #6b4a10; }
+
+  /* Progress bar */
+  #progress-bar-wrap {
+    margin-top: 8px;
+    background: rgba(42,31,14,0.5);
+    border: 1px solid var(--gold);
+    border-radius: 99px;
+    height: 10px;
+    overflow: hidden;
+  }
+  #progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #6b4a10, var(--gold-light));
+    border-radius: 99px;
+    transition: width 0.4s ease;
+  }
+
+  /* Difficulty buttons */
+  .diff-btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+  .diff-btn {
+    background: linear-gradient(135deg, #3a2a10, #5a4020);
+    color: var(--gold-light);
+    padding: 8px 20px;
+    font-size: 0.85rem;
+  }
+  .diff-btn:hover { background: linear-gradient(135deg, #5a4020, #8a6030); }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <h1>⚓ Treasure Hunt</h1>
+  <p class="subtitle">Unearth the gold — dodge the traps</p>
+
+  <div id="map-wrapper">
+    <span class="corner tl">✦</span>
+    <span class="corner tr">✦</span>
+    <span class="corner bl">✦</span>
+    <span class="corner br">✦</span>
+    <div id="grid"></div>
+  </div>
+
+  <div id="progress-bar-wrap"><div id="progress-bar" style="width:0%"></div></div>
+
+  <div id="hud">
+    <div class="hud-stat">
+      <span class="hud-label">Lives</span>
+      <span class="hud-value" id="lives-display">❤️❤️❤️</span>
+    </div>
+    <div class="hud-stat">
+      <span class="hud-label">Score</span>
+      <span class="hud-value" id="score-display">0</span>
+    </div>
+    <div class="hud-stat">
+      <span class="hud-label">Found</span>
+      <span class="hud-value" id="found-display">0/5</span>
+    </div>
+    <div class="hud-stat">
+      <span class="hud-label">Moves</span>
+      <span class="hud-value" id="moves-display">0</span>
+    </div>
+    <button onclick="initGame(currentDiff)" style="padding:8px 18px;font-size:0.8rem;">↺ Reset</button>
+  </div>
+
+  <div id="clue-box">
+    <span class="clue-label">Compass Reading</span>
+    <span id="clue-text">Choose a square to begin your quest...</span>
+  </div>
+</div>
+
+<!-- Overlay -->
+<div id="overlay">
+  <div class="overlay-card">
+    <span class="big-emoji" id="overlay-emoji">🏆</span>
+    <h2 id="overlay-title">Victory!</h2>
+    <p id="overlay-msg">You found all the treasure!</p>
+    <button onclick="initGame(currentDiff)">Play Again</button>
+    <div class="diff-btns">
+      <button class="diff-btn" onclick="initGame('easy')">Easy</button>
+      <button class="diff-btn" onclick="initGame('normal')">Normal</button>
+      <button class="diff-btn" onclick="initGame('hard')">Hard</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const GRID_SIZE = 8;
+const TOTAL_CELLS = GRID_SIZE * GRID_SIZE; // 64
+
+const DIFFICULTY = {
+  easy:   { treasures: 5, traps: 6,  lives: 4, label: 'Easy' },
+  normal: { treasures: 5, traps: 10, lives: 3, label: 'Normal' },
+  hard:   { treasures: 5, traps: 14, lives: 2, label: 'Hard' },
+};
+
+let board = []; // 'empty' | 'treasure' | 'trap'
+let revealed = [];
+let lives, score, moves, found, totalTreasures;
+let currentDiff = 'normal';
+
+// Emoji themes
+const TERRAIN_EMOJIS = ['🌿','🍂','🪨','🌾','🍃','🌊','🪵','🌿'];
+const TRAP_EMOJIS = ['💀','🐍','🕷️','🦂','⚡','🔥','💣','🪤'];
+const TREASURE_EMOJI = '💰';
+const EMPTY_EMOJIS = ['🌿','🍂','🪨','🌾','🍃','🌊','🪵','⭐','🦋','🍄'];
+
+function shuffle(arr) {
+  for (let i = arr.length-1; i>0; i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]] = [arr[j],arr[i]];
+  }
+  return arr;
+}
+
+function initGame(diff = 'normal') {
+  currentDiff = diff;
+  const cfg = DIFFICULTY[diff];
+  lives = cfg.lives;
+  score = 0;
+  moves = 0;
+  found = 0;
+  totalTreasures = cfg.treasures;
+
+  // Build board
+  board = new Array(TOTAL_CELLS).fill('empty');
+  revealed = new Array(TOTAL_CELLS).fill(false);
+
+  // Place items
+  const indices = shuffle([...Array(TOTAL_CELLS).keys()]);
+  for (let i=0; i<cfg.treasures; i++) board[indices[i]] = 'treasure';
+  for (let i=cfg.treasures; i<cfg.treasures+cfg.traps; i++) board[indices[i]] = 'trap';
+
+  renderGrid();
+  updateHUD();
+  setClue('Choose a square to begin your quest...');
+  document.getElementById('progress-bar').style.width = '0%';
+  document.getElementById('overlay').classList.remove('active');
+}
+
+function renderGrid() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for (let i=0; i<TOTAL_CELLS; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.dataset.idx = i;
+    if (revealed[i]) {
+      cell.classList.add('revealed');
+      cell.textContent = getCellEmoji(i);
+      if (board[i]==='trap') cell.classList.add('boom');
+      if (board[i]==='treasure') cell.classList.add('treasure');
+    }
+    cell.addEventListener('click', () => handleClick(i));
+    grid.appendChild(cell);
+  }
+}
+
+function getCellEmoji(i) {
+  if (board[i]==='treasure') return TREASURE_EMOJI;
+  if (board[i]==='trap') return TRAP_EMOJIS[i % TRAP_EMOJIS.length];
+  return EMPTY_EMOJIS[i % EMPTY_EMOJIS.length];
+}
+
+function handleClick(i) {
+  if (revealed[i] || lives <= 0) return;
+
+  revealed[i] = true;
+  moves++;
+  const cell = document.querySelector(`.cell[data-idx="${i}"]`);
+
+  if (board[i] === 'treasure') {
+    found++;
+    score += 100 + (lives * 20);
+    cell.classList.add('revealed','treasure');
+    cell.textContent = TREASURE_EMOJI;
+    const clues = [
+      'Glittering gold! The ancestors smile upon you!',
+      'You\'ve unearthed ancient riches! Keep searching!',
+      'Gold! Your pockets grow heavy with fortune!',
+      'The X marks this spot! Magnificent find!',
+      'A chest of wonders! Fortune favors the bold!'
+    ];
+    setClue(clues[Math.floor(Math.random()*clues.length)]);
+    document.getElementById('progress-bar').style.width = (found/totalTreasures*100)+'%';
+    if (found >= totalTreasures) {
+      setTimeout(()=>showOverlay('win'), 600);
+    }
+  } else if (board[i] === 'trap') {
+    lives--;
+    score = Math.max(0, score - 30);
+    cell.classList.add('revealed','boom');
+    cell.textContent = TRAP_EMOJIS[i % TRAP_EMOJIS.length];
+    const clues = [
+      'Curses! A trap! You lose a life!',
+      'The ground gives way — a vile snare!',
+      'Poison darts fly! Watch your step!',
+      'An ancient curse awakens! Beware!',
+      'Treachery! The pirates left their mark!'
+    ];
+    setClue(clues[Math.floor(Math.random()*clues.length)]);
+    if (lives <= 0) {
+      setTimeout(()=>revealAll(), 400);
+      setTimeout(()=>showOverlay('lose'), 900);
+    }
+  } else {
+    cell.classList.add('revealed');
+    cell.textContent = getCellEmoji(i);
+    // Proximity clue
+    const prox = getProximity(i);
+    setClue(prox);
+  }
+
+  updateHUD();
+}
+
+function getProximity(i) {
+  const row = Math.floor(i/GRID_SIZE), col = i%GRID_SIZE;
+  let nearTreasure = 0, nearTrap = 0;
+
+  for (let dr=-2; dr<=2; dr++) {
+    for (let dc=-2; dc<=2; dc++) {
+      if (dr===0 && dc===0) continue;
+      const r=row+dr, c=col+dc;
+      if (r<0||r>=GRID_SIZE||c<0||c>=GRID_SIZE) continue;
+      const ni = r*GRID_SIZE+c;
+      const dist = Math.max(Math.abs(dr),Math.abs(dc));
+      if (board[ni]==='treasure') nearTreasure += (dist===1?2:1);
+      if (board[ni]==='trap') nearTrap += (dist===1?2:1);
+    }
+  }
+
+  if (nearTreasure >= 4) return '🔥 Hot! Treasure is VERY close!';
+  if (nearTreasure >= 2) return '♨️ Warm... gold glimmers nearby...';
+  if (nearTreasure >= 1) return '🌤️ A faint glimmer... keep searching...';
+  if (nearTrap >= 3)     return '☠️ Great danger lurks nearby — tread carefully!';
+  if (nearTrap >= 1)     return '⚠️ Something sinister stirs in the shadows...';
+  return '❄️ Cold... nothing of note here. Move on, explorer.';
+}
+
+function revealAll() {
+  for (let i=0; i<TOTAL_CELLS; i++) {
+    if (!revealed[i] && board[i] !== 'empty') {
+      revealed[i] = true;
+      const cell = document.querySelector(`.cell[data-idx="${i}"]`);
+      cell.classList.add('revealed');
+      cell.textContent = getCellEmoji(i);
+      if (board[i]==='trap') cell.classList.add('boom');
+      if (board[i]==='treasure') cell.classList.add('treasure');
+    }
+  }
+}
+
+function updateHUD() {
+  const hearts = ['❤️','❤️','❤️','❤️'];
+  const empty = '🖤';
+  const maxLives = DIFFICULTY[currentDiff].lives;
+  let heartsStr = '';
+  for (let i=0;i<maxLives;i++) heartsStr += (i<lives?'❤️':'🖤');
+  document.getElementById('lives-display').textContent = heartsStr;
+  document.getElementById('score-display').textContent = score;
+  document.getElementById('found-display').textContent = `${found}/${totalTreasures}`;
+  document.getElementById('moves-display').textContent = moves;
+}
+
+function setClue(msg) {
+  document.getElementById('clue-text').textContent = msg;
+}
+
+function showOverlay(type) {
+  const overlay = document.getElementById('overlay');
+  const emoji = document.getElementById('overlay-emoji');
+  const title = document.getElementById('overlay-title');
+  const msg = document.getElementById('overlay-msg');
+
+  if (type==='win') {
+    emoji.textContent = '🏆';
+    title.textContent = 'Victory!';
+    msg.innerHTML = `All ${totalTreasures} treasures found!<br><strong>Score: ${score}</strong> in ${moves} moves.<br>The seas sing your name, brave explorer!`;
+  } else {
+    emoji.textContent = '💀';
+    title.textContent = 'Defeated!';
+    msg.innerHTML = `The traps claimed your last breath...<br><strong>Found: ${found}/${totalTreasures}</strong> • Score: ${score}<br>Rise again and seek your fortune!`;
+  }
+  overlay.classList.add('active');
+}
+
+// Start
+initGame('normal');
+</script>
+</body>
+</html>
